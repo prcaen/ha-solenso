@@ -125,15 +125,18 @@ def is_daylight(hass: HomeAssistant, when: datetime) -> bool:
         return False
 
 
-def _positions(items: list[dict[str, Any]]) -> dict[int, dict[str, int]]:
-    """Première position connue de chaque onduleur (le port 1 pour un onduleur à plusieurs entrées)."""
-    positions: dict[int, dict[str, int]] = {}
-    for item in sorted(items, key=lambda i: (i.get("port") or 0)):
+def _positions(items: list[dict[str, Any]]) -> dict[int, dict[int, dict[str, int]]]:
+    """Position de chaque entrée PV : {id onduleur: {port: {\"row\", \"column\", \"array\"}}}."""
+    positions: dict[int, dict[int, dict[str, int]]] = {}
+    for item in sorted(items, key=lambda i: (i.get("mi_id") or 0, i.get("port") or 0)):
         try:
             micro_id, row, column = int(item["mi_id"]), int(item["x"]), int(item["y"])
         except (KeyError, TypeError, ValueError):
             continue
-        positions.setdefault(micro_id, {"row": row, "column": column, "array": int(item.get("aid") or 0)})
+        port = int(item.get("port") or 1)
+        positions.setdefault(micro_id, {}).setdefault(
+            port, {"row": row, "column": column, "array": int(item.get("aid") or 0)}
+        )
     return positions
 
 
@@ -154,8 +157,8 @@ class SolensoCoordinator(DataUpdateCoordinator[dict[int, StationData]]):
         self.stations: list[dict[str, Any]] = entry.data[CONF_STATIONS]
         # Inventaire des micro-onduleurs par centrale : {sid: [micro, ...]}
         self.micros: dict[int, list[dict[str, Any]]] = {}
-        # Position de chaque onduleur sur le plan : {sid: {id onduleur: {"row", "column", "array"}}}
-        self.layout: dict[int, dict[int, dict[str, int]]] = {}
+        # Position de chaque entrée PV sur le plan : {sid: {id onduleur: {port: {"row", "column", "array"}}}}
+        self.layout: dict[int, dict[int, dict[int, dict[str, int]]]] = {}
         self._micros_fetched_at: datetime | None = None
         self._module_warned = False
         # Dernière relecture de la veille : {sid: (jour, mesures, lue à)}

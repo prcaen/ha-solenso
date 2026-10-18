@@ -218,10 +218,13 @@ async def test_micro_sensors_and_devices(hass: HomeAssistant, aioclient_mock):
     )
     entry = await _setup(hass, aioclient_mock, body, layout={"json": LAYOUT_LIST})
     assert entry.state is ConfigEntryState.LOADED
-    # Position sur le plan exposée pour la carte.
+    # Position sur le plan et entrées PV exposées pour la carte.
     attrs = hass.states.get("sensor.micro_onduleur_112100000001_power").attributes
-    assert (attrs["layout_row"], attrs["layout_column"], attrs["layout_array"]) == (1, 7, 77)
-    assert "layout_row" not in hass.states.get("sensor.micro_onduleur_112100000001_temperature").attributes
+    assert attrs["panel_count"] == 1
+    assert attrs["panels"] == [
+        {"port": 1, "power": 5.3, "layout_row": 1, "layout_column": 7, "layout_array": 77}
+    ]
+    assert "panels" not in hass.states.get("sensor.micro_onduleur_112100000001_temperature").attributes
 
     states = {s.entity_id: s for s in hass.states.async_all()}
     print(sorted(k for k in states if "112100000001" in k or "dtu" in k))
@@ -249,6 +252,62 @@ async def test_micro_sensors_and_devices(hass: HomeAssistant, aioclient_mock):
     assert module_call[2] == {"sid": SID, "date": dt_util.now().date().isoformat()}
 
 
+MICRO_LIST_MULTI = {
+    "status": "0",
+    "message": "success",
+    "data": {
+        "list": [
+            {"id": 201, "sn": "112100000201", "model_no": "HMS-2000-4T", "init_soft_ver": "V01.00.14",
+             "init_hard_ver": "H00.08.00", "dtu_id": 900, "dtu_sn": "10D300000009", "port_array": [1, 2]},
+        ]
+    },
+}
+LAYOUT_MULTI = {
+    "status": "0",
+    "message": "success",
+    "data": [
+        {"id": 1, "aid": 77, "dev_type": 3, "mi_id": 201, "mi_sn": "112100000201", "port": 1, "x": 0, "y": 0},
+        {"id": 2, "aid": 77, "dev_type": 3, "mi_id": 201, "mi_sn": "112100000201", "port": 2, "x": 0, "y": 1},
+    ],
+}
+
+
+async def test_multi_port_micro_one_panel_per_pv_input(hass: HomeAssistant, aioclient_mock):
+    """Un onduleur à plusieurs entrées : la carte affiche un panneau par entrée PV."""
+    body = encode_day(
+        encode_micro(
+            201, slots(1),
+            {1: [(32.0, 4.0, 128.0, 300.0)], 2: [(33.0, 4.5, 148.5, 350.0)]},
+            [30.0], [230.0], [50.0],
+        )
+    )
+    aioclient_mock.post(LOGIN, json={"status": "0", "data": {"token": "tok"}})
+    aioclient_mock.post(LAYOUT, json=LAYOUT_MULTI)
+    aioclient_mock.post(REAL, json=_real())
+    aioclient_mock.post(MICROS, json=MICRO_LIST_MULTI)
+    aioclient_mock.post(DTUS, json=DTU_LIST)
+    aioclient_mock.post(MODULE, content=body, headers={"Content-Type": "application/octet-stream;charset=utf-8"})
+    entry = _entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+
+    # Puissance de l'onduleur = somme de ses deux panneaux.
+    assert float(hass.states.get("sensor.micro_onduleur_112100000201_power").state) == 276.5
+    # Les panneaux de la carte : un par entrée, avec puissance et position propres.
+    attrs = hass.states.get("sensor.micro_onduleur_112100000201_power").attributes
+    assert attrs["panel_count"] == 2
+    assert attrs["panels"] == [
+        {"port": 1, "power": 128.0, "layout_row": 0, "layout_column": 0, "layout_array": 77},
+        {"port": 2, "power": 148.5, "layout_row": 0, "layout_column": 1, "layout_array": 77},
+    ]
+    # Capteurs détaillés par entrée.
+    assert float(hass.states.get("sensor.micro_onduleur_112100000201_pv_1_power").state) == 128.0
+    assert float(hass.states.get("sensor.micro_onduleur_112100000201_pv_2_power").state) == 148.5
+    assert float(hass.states.get("sensor.micro_onduleur_112100000201_pv_2_voltage").state) == 33.0
+
+
 async def test_micro_data_failure_keeps_station_sensors(hass: HomeAssistant, aioclient_mock):
     entry = await _setup(hass, aioclient_mock, None, module_status=500, layout={"status": 500})
     assert entry.state is ConfigEntryState.LOADED
@@ -261,7 +320,8 @@ async def test_micro_not_reporting_yet_reads_zero(hass: HomeAssistant, aioclient
     body = encode_day(encode_micro(101, slots(1), {1: [(30.0, 0.1, 3.0, 0.0)]}, [10.0], [230.0], [50.0]))
     await _setup(hass, aioclient_mock, body, layout={"json": {"status": "0", "data": []}})
     assert float(hass.states.get("sensor.micro_onduleur_112100000002_power").state) == 0
-    assert "layout_row" not in hass.states.get("sensor.micro_onduleur_112100000002_power").attributes
+    attrs = hass.states.get("sensor.micro_onduleur_112100000002_power").attributes
+    assert attrs["panel_count"] == 1 and attrs["panels"][0]["layout_row"] is None
     assert float(hass.states.get("sensor.micro_onduleur_112100000002_energy_today").state) == 0
     assert hass.states.get("sensor.micro_onduleur_112100000002_temperature").state == "unknown"
 

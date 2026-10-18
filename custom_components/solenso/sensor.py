@@ -443,6 +443,8 @@ class _MicroEntity(CoordinatorEntity[SolensoCoordinator], SensorEntity):
         self._sid = sid
         self._micro_id: int = micro["id"]
         self._sn: str = micro.get("sn") or str(micro["id"])
+        # Entrées PV de l'onduleur : une par panneau raccordé.
+        self._ports: list[int] = _ports(micro)
         self._attr_device_info = link_only(micro_device(sid, micro))
 
     @property
@@ -468,17 +470,26 @@ class MicroSensor(_MicroEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        # La position sur le plan sert à la carte pour reproduire la disposition du toit.
+        # Les entrées PV servent à la carte : une case par panneau, avec sa puissance
+        # et sa position sur le plan (page Agencement), même avec n panneaux par onduleur.
         if self.entity_description.key != "power":
             return None
-        position = self.coordinator.layout.get(self._sid, {}).get(self._micro_id)
-        if not position:
-            return None
-        return {
-            "layout_row": position["row"],
-            "layout_column": position["column"],
-            "layout_array": position["array"],
-        }
+        state = self._state
+        layout = self.coordinator.layout.get(self._sid, {}).get(self._micro_id, {})
+        panels = []
+        for port in self._ports:
+            port_state = state.ports.get(port) if state else None
+            position = layout.get(port)
+            panels.append(
+                {
+                    "port": port,
+                    "power": round(port_state.power, 2) if port_state else 0.0,
+                    "layout_row": position["row"] if position else None,
+                    "layout_column": position["column"] if position else None,
+                    "layout_array": position["array"] if position else 0,
+                }
+            )
+        return {"panel_count": len(panels), "panels": panels}
 
     def __init__(self, coordinator, sid, micro, description: MicroSensorDescription) -> None:
         super().__init__(coordinator, sid, micro)

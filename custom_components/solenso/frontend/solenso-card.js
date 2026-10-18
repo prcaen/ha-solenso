@@ -1,9 +1,9 @@
 /*
  * Carte Lovelace « Solenso » : le panneau sert de jauge.
- * Chaque cellule = un micro-onduleur, éclairée selon sa puissance.
+ * Une cellule par panneau PV (une entrée de micro-onduleur), éclairée selon sa puissance.
  * Livrée avec l'intégration Solenso (aucune ressource à ajouter à la main).
  */
-const CARD_VERSION = "0.5.0";
+const CARD_VERSION = "0.6.2";
 const DOMAIN = "solenso";
 
 const I18N = {
@@ -15,13 +15,14 @@ const I18N = {
     asleep: (t) => `en veille depuis ${t}`,
     no_station: "Aucune centrale Solenso trouvée. Ajoutez l'intégration Solenso, puis choisissez la centrale dans les options de la carte.",
     panels: (n) => `${n} panneau${n > 1 ? "x" : ""}`,
+    panel: "panneau",
     name: "Panneau solaire",
-    description: "Centrale Solenso : le panneau s'éclaire selon la production de chaque micro-onduleur.",
+    description: "Centrale Solenso : le panneau s'éclaire selon la production de chaque panneau PV.",
     f_device: "Centrale",
     f_columns: "Colonnes",
     f_peak: "Puissance crête par panneau (W)",
     f_show_values: "Afficher les watts sur chaque panneau",
-    f_show_panels: "Un panneau par micro-onduleur",
+    f_show_panels: "Un panneau par entrée PV",
     f_name: "Titre",
   },
   en: {
@@ -32,13 +33,14 @@ const I18N = {
     asleep: (t) => `asleep since ${t}`,
     no_station: "No Solenso station found. Add the Solenso integration, then pick the station in the card options.",
     panels: (n) => `${n} panel${n > 1 ? "s" : ""}`,
+    panel: "panel",
     name: "Solar panel",
-    description: "Solenso station: the panel lights up with each micro-inverter's output.",
+    description: "Solenso station: the panel lights up with each PV panel's output.",
     f_device: "Station",
     f_columns: "Columns",
     f_peak: "Peak power per panel (W)",
     f_show_values: "Show watts on each panel",
-    f_show_panels: "One panel per micro-inverter",
+    f_show_panels: "One panel per PV input",
     f_name: "Title",
   },
 };
@@ -78,6 +80,35 @@ const num = (hass, entityId) => {
   const v = parseFloat(hass.states[entityId]?.state);
   return Number.isFinite(v) ? v : null;
 };
+
+// Un panneau par entrée PV : les attributs « panels » de la puissance de chaque
+// onduleur donnent le nombre d'entrées, la puissance et la position de chaque panneau.
+// Sans ces attributs (onduleur à une seule entrée), un panneau par onduleur.
+function panelsOf(hass, station) {
+  const panels = [];
+  for (const [mi, m] of station.micros.entries()) {
+    const attrs = hass.states[m.entities.power]?.attributes || {};
+    const list = Array.isArray(attrs.panels) && attrs.panels.length ? attrs.panels : [{}];
+    for (const [pi, p] of list.entries()) {
+      panels.push({
+        micro: mi,
+        port: p.port ?? pi + 1,
+        power: Number.isFinite(p.power) ? p.power : null,
+        row: Number.isInteger(p.layout_row) ? p.layout_row : null,
+        column: Number.isInteger(p.layout_column) ? p.layout_column : null,
+        array: p.layout_array ?? 0,
+      });
+    }
+  }
+  return panels;
+}
+
+// Libellé d'une cellule : le nom de l'onduleur, précisé de l'entrée si plusieurs.
+function panelLabel(tr, station, panels, i) {
+  const p = panels[i];
+  const m = station.micros[p.micro];
+  return panels.some((q, k) => k !== i && q.micro === p.micro) ? `${m.name} · ${tr.panel} ${p.port}` : m.name;
+}
 
 function fmt(hass, entityId, fallbackDigits = 1) {
   const st = hass.states[entityId];
@@ -205,24 +236,17 @@ class SolensoCard extends HTMLElement {
 
   // Position de chaque panneau : disposition réelle du toit (attributs layout_* fournis par
   // l'intégration), sinon grille automatique dans l'ordre des noms.
-  _placement(station, hass) {
-    const perMicro = this._config.show_panels && station.micros.length > 0;
-    if (!perMicro) return { slots: [{ i: 0, r: 0, c: 0, sep: 0 }], rows: 1, cols: 1, seps: 0, perMicro };
-    const n = station.micros.length;
-    const pos = station.micros.map((m) => {
-      const a = hass.states[m.entities.power]?.attributes || {};
-      return Number.isInteger(a.layout_row) && Number.isInteger(a.layout_column)
-        ? { r: a.layout_row, c: a.layout_column, g: a.layout_array ?? 0 }
-        : null;
-    });
-    const useLayout = !this._config.columns && pos.some(Boolean);
+  _placement(panels) {
+    if (!panels) return { slots: [{ i: 0, r: 0, c: 0, sep: 0 }], rows: 1, cols: 1, seps: 0 };
+    const n = panels.length;
+    const useLayout = !this._config.columns && panels.some((p) => p.row !== null);
     const slots = [];
     let rows = 0, cols = 0, seps = 0;
     if (useLayout) {
       // Un bloc par champ de panneaux, empilés avec une rangée d'écart.
-      const groups = [...new Set(pos.filter(Boolean).map((p) => p.g))].sort((a, b) => a - b);
+      const groups = [...new Set(panels.filter((p) => p.row !== null).map((p) => p.array))].sort((a, b) => a - b);
       for (const g of groups) {
-        const inGroup = pos.map((p, i) => (p && p.g === g ? { ...p, i } : null)).filter(Boolean);
+        const inGroup = panels.map((p, i) => (p.row !== null && p.array === g ? { i, r: p.row, c: p.column } : null)).filter(Boolean);
         const r0 = Math.min(...inGroup.map((p) => p.r)), c0 = Math.min(...inGroup.map((p) => p.c));
         if (rows) seps++;
         const offset = rows;
@@ -231,8 +255,8 @@ class SolensoCard extends HTMLElement {
         cols = Math.max(cols, ...inGroup.map((p) => p.c - c0 + 1));
       }
     }
-    // Onduleurs sans position (ou grille imposée par « columns ») : à la suite, ligne par ligne.
-    const rest = station.micros.map((_, i) => i).filter((i) => !useLayout || !pos[i]);
+    // Panneaux sans position (ou grille imposée par « columns ») : à la suite, ligne par ligne.
+    const rest = panels.map((_, i) => i).filter((i) => !useLayout || panels[i].row === null);
     if (rest.length) {
       const per = useLayout ? Math.max(cols, 1) : this._autoCols(n);
       if (rows) seps++;
@@ -241,13 +265,14 @@ class SolensoCard extends HTMLElement {
       rows = offset + Math.ceil(rest.length / per);
       cols = Math.max(cols, Math.min(per, rest.length));
     }
-    return { slots, rows, cols, seps, perMicro };
+    return { slots, rows, cols, seps };
   }
 
-  _build(station, tr, placement) {
+  _build(station, tr, placement, panels) {
     const root = this.shadowRoot || this.attachShadow({ mode: "open" });
     const cfg = this._config;
-    const { slots, rows, cols, seps, perMicro } = placement;
+    const { slots, rows, cols, seps } = placement;
+    const perMicro = panels !== null;
 
     // Géométrie du panneau : cellules portrait, cadre aluminium.
     const W = perMicro ? 64 : 360, H = perMicro ? 96 : 210, G = perMicro ? 5 : 0, F = 7;
@@ -257,7 +282,7 @@ class SolensoCard extends HTMLElement {
     let cells = "";
     for (const { i, r, c, sep } of slots) {
       const x = F + c * (W + G), y = F + r * (H + G) + sep * S;
-      const label = perMicro ? station.micros[i].name : station.name;
+      const label = perMicro ? panelLabel(tr, station, panels, i) : station.name;
       const lines = perMicro
         ? [1, 2].map((k) => `<line x1="${x + (W * k) / 3}" y1="${y}" x2="${x + (W * k) / 3}" y2="${y + H}"/>`).join("")
         : Array.from({ length: 9 }, (_, k) => `<line x1="${x + (W * (k + 1)) / 10}" y1="${y}" x2="${x + (W * (k + 1)) / 10}" y2="${y + H}"/>`).join("") +
@@ -299,16 +324,17 @@ class SolensoCard extends HTMLElement {
     root.querySelectorAll(".cell").forEach((el) =>
       activate(el, () => {
         const s = this._station;
-        const i = +el.dataset.i;
-        this._moreInfo(s && s.micros.length && this._config.show_panels ? s.micros[i]?.entities.power : s?.entities.power);
+        const p = this._panels && this._panels[+el.dataset.i];
+        this._moreInfo(s && p ? s.micros[p.micro]?.entities.power : s?.entities.power);
       })
     );
+    this._panels = panels;
     this._els = {
       title: root.querySelector(".title"),
       sub: root.querySelector(".sub"),
       v: root.querySelector(".power .v"),
       u: root.querySelector(".power .u"),
-      // Indexés par numéro d'onduleur (l'ordre du DOM suit le plan, pas la liste).
+      // Indexés par numéro de panneau (l'ordre du DOM suit le plan, pas la liste).
       cells: [...root.querySelectorAll(".cell")].reduce((a, el) => ((a[+el.dataset.i] = el), a), []),
       texts: [...root.querySelectorAll(".cellv")].reduce((a, el) => ((a[+el.dataset.i] = el), a), []),
       plate: [...root.querySelectorAll(".plate dd")],
@@ -329,20 +355,22 @@ class SolensoCard extends HTMLElement {
       return;
     }
 
-    const placement = this._placement(station, hass);
+    const cfg = this._config;
+    const perMicro = cfg.show_panels && station.micros.length > 0;
+    const panels = perMicro ? panelsOf(hass, station) : null;
+    const placement = this._placement(panels);
     const sig = [
       station.device.id,
       station.micros.map((m) => m.device.id + m.name).join(","),
-      placement.slots.map((s) => `${s.i}:${s.r}:${s.c}`).join(","),
+      panels ? panels.map((p, i) => `${i}:${p.micro}.${p.port}:${p.row}:${p.column}:${p.array}`).join(",") : "",
       JSON.stringify(this._config),
       tr === I18N.fr,
     ].join("|");
     if (sig !== this._sig) {
-      this._build(station, tr, placement);
+      this._build(station, tr, placement, panels);
       this._sig = sig;
     }
     const els = this._els;
-    const cfg = this._config;
 
     els.title.textContent = cfg.name || station.name;
     const p = fmt(hass, station.entities.power, 0);
@@ -354,14 +382,20 @@ class SolensoCard extends HTMLElement {
     const power = num(hass, station.entities.power);
     const asleep = power === 0 && lastIso && Date.now() - new Date(lastIso) > 60 * 60000;
     const parts = [];
-    if (station.micros.length) parts.push(tr.panels(station.micros.length));
+    if (station.micros.length) {
+      // Nombre de panneaux : une entrée PV par panneau, n par micro-onduleur.
+      const total = station.micros.reduce(
+        (sum, m) => sum + (hass.states[m.entities.power]?.attributes?.panel_count || 1),
+        0
+      );
+      parts.push(tr.panels(total));
+    }
     if (lastIso && !isNaN(new Date(lastIso))) parts.push(asleep ? tr.asleep(relTime(hass, lastIso)) : tr.updated(relTime(hass, lastIso)));
     els.sub.textContent = parts.join(", ");
 
-    const perMicro = cfg.show_panels && station.micros.length > 0;
     if (perMicro) {
-      station.micros.forEach((m, i) => {
-        const w = num(hass, m.entities.power);
+      panels.forEach((p, i) => {
+        const w = p.power ?? num(hass, station.micros[p.micro].entities.power);
         const ratio = w == null ? 0 : w / (cfg.peak_power || 350);
         els.cells[i]?.setAttribute("fill", cellColor(ratio));
         const txt = els.texts[i];
@@ -370,10 +404,13 @@ class SolensoCard extends HTMLElement {
           txt.setAttribute("fill", ratio > 0.55 ? "#0c1424" : "rgba(255,255,255,.92)");
         }
         const title = els.cells[i]?.querySelector("title");
-        if (title) title.textContent = `${m.name}: ${w == null ? "—" : Math.round(w) + " W"}`;
+        if (title) title.textContent = `${panelLabel(tr, station, panels, i)}: ${w == null ? "—" : Math.round(w) + " W"}`;
       });
     } else {
-      const peak = (cfg.peak_power || 350) * Math.max(1, station.micros.length);
+      const peak = (cfg.peak_power || 350) * Math.max(
+        1,
+        station.micros.reduce((sum, m) => sum + (hass.states[m.entities.power]?.attributes?.panel_count || 1), 0)
+      );
       els.cells[0]?.setAttribute("fill", cellColor(power == null ? 0 : power / peak));
     }
 

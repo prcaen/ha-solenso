@@ -72,7 +72,7 @@ Les mesures des onduleurs arrivent par pas de 15 minutes. Sans nouveau point dep
 
 L'intégration fournit sa propre carte et l'ajoute elle-même aux ressources des tableaux de bord (Paramètres → Tableaux de bord → Ressources) : rien à installer en plus. Elle la retire si l'intégration est supprimée.
 
-Dans un tableau de bord : **Ajouter une carte** → chercher **Solenso**. Le panneau s'éclaire selon la production de chaque micro-onduleur ; un panneau sombre produit moins que les autres. Un clic sur un panneau, la puissance ou un chiffre de la plaque ouvre l'historique correspondant.
+Dans un tableau de bord : **Ajouter une carte** → chercher **Solenso**. Le panneau s'éclaire selon la production de chaque panneau PV ; un panneau sombre produit moins que les autres. Un clic sur un panneau, la puissance ou un chiffre de la plaque ouvre l'historique correspondant.
 
 ```yaml
 type: custom:solenso-card
@@ -83,7 +83,7 @@ show_panels: true     # false : un seul grand panneau pour toute la centrale
 show_values: true     # watts affichés sur chaque panneau
 ```
 
-Les panneaux sont placés **comme sur le toit**, d'après la page « Agencement » de monitor.solenso.net : l'intégration lit la position de chaque micro-onduleur (attributs `layout_row`, `layout_column` et `layout_array` de son capteur de puissance). Avec plusieurs toitures, chacune forme un bloc. Les onduleurs sans position, ou toute la centrale si l'agencement n'est pas renseigné chez Solenso, sont rangés par nom d'appareil. Indiquer `columns` impose une grille simple à la place du plan.
+Les panneaux sont placés **comme sur le toit**, d'après la page « Agencement » de monitor.solenso.net : l'intégration lit la position de chaque entrée PV (attributs `panels` du capteur de puissance de chaque micro-onduleur). **Une cellule par panneau PV**, même quand un micro-onduleur en alimente plusieurs : compteur de panneaux, puissance affichée et éclairage sont ceux de chaque panneau. Avec plusieurs toitures, chacune forme un bloc. Les panneaux sans position, ou toute la centrale si l'agencement n'est pas renseigné chez Solenso, sont rangés par nom d'appareil. Indiquer `columns` impose une grille simple à la place du plan.
 
 ## Tableau Énergie
 

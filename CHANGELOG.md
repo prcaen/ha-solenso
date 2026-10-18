@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.6.2 — 2026-10-18
+
+- **La carte compte et affiche les panneaux PV, pas les micro-onduleurs.** Un micro-onduleur peut alimenter plusieurs panneaux : la carte dessine désormais une cellule par panneau (une par entrée PV), avec la puissance, l'éclairage et le compteur « N panneaux » de chaque panneau. La position sur le plan « Agencement » est lue pour chaque entrée (attributs `panels` du capteur de puissance de l'onduleur) ; le réglage « puissance crête par panneau » s'applique désormais à un panneau réel.
+
 ## 0.6.1 — 2026-10-16
 
 - Si la liste des micro-onduleurs est injoignable au démarrage (panne DNS, cloud lent), elle est retentée toutes les 5 minutes au lieu de 6 heures, et l'intégration se recharge d'elle-même dès qu'elle arrive : les capteurs d'onduleur et la statistique de production ne restent plus bloqués jusqu'au soir.
