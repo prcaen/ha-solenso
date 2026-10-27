@@ -49,6 +49,17 @@ Les appareils sont organisés comme l'installation : **centrale → passerelle D
 | Production cumulée | kWh | **à utiliser dans le tableau Énergie** : suit la production heure par heure |
 | Dernière remontée | horodatage | diagnostic |
 
+Avec un **compteur d'achat/vente** installé (page « Contrôle du reflux » du cloud Solenso), la centrale expose en plus :
+
+| Capteur | Unité | Remarque |
+|---|---|---|
+| Puissance consommée | W | consommation instantanée de la maison |
+| Puissance réseau | W | négative en injection |
+| Achat réseau du jour / du mois / de l'année / total | kWh | énergie achetée au réseau |
+| Vente réseau du jour / du mois / de l'année / total | kWh | énergie injectée au réseau |
+
+Ces capteurs apparaissent seuls : sans compteur, rien n'est créé ; un compteur ajouté plus tard est détecté au bout de quelques minutes (rechargement automatique de l'intégration).
+
 ### Micro-onduleurs
 
 | Capteur | Unité | Remarque |

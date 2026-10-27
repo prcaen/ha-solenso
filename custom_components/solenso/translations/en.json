@@ -88,6 +88,36 @@
       },
       "pv_energy_port": {
         "name": "PV {port} energy today"
+      },
+      "load_power": {
+        "name": "Consumed power"
+      },
+      "grid_power": {
+        "name": "Grid power"
+      },
+      "grid_import_today": {
+        "name": "Grid import today"
+      },
+      "grid_import_month": {
+        "name": "Grid import this month"
+      },
+      "grid_import_year": {
+        "name": "Grid import this year"
+      },
+      "grid_import_total": {
+        "name": "Total grid import"
+      },
+      "grid_export_today": {
+        "name": "Grid export today"
+      },
+      "grid_export_month": {
+        "name": "Grid export this month"
+      },
+      "grid_export_year": {
+        "name": "Grid export this year"
+      },
+      "grid_export_total": {
+        "name": "Total grid export"
       }
     },
     "binary_sensor": {

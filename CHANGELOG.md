@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.7.0 — 2026-10-27
+
+- **Consommation de la maison** : avec un compteur d'achat/vente installé (page « Contrôle du reflux » du cloud Solenso), la centrale expose désormais la puissance consommée, la puissance réseau, et les énergies achetée et vendue au réseau (jour, mois, année, total). Sans compteur, aucun capteur n'est créé ; un compteur ajouté plus tard est détecté et l'intégration se recharge seule pour créer ses capteurs. Ces valeurs arrivent avec les données temps réel déjà récupérées : aucune requête supplémentaire.
+- La carte affiche un panneau par panneau PV, pas par micro-onduleur (voir 0.6.2).
+
 ## 0.6.2 — 2026-10-18
 
 - **La carte compte et affiche les panneaux PV, pas les micro-onduleurs.** Un micro-onduleur peut alimenter plusieurs panneaux : la carte dessine désormais une cellule par panneau (une par entrée PV), avec la puissance, l'éclairage et le compteur « N panneaux » de chaque panneau. La position sur le plan « Agencement » est lue pour chaque entrée (attributs `panels` du capteur de puissance de l'onduleur) ; le réglage « puissance crête par panneau » s'applique désormais à un panneau réel.

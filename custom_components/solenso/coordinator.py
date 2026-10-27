@@ -220,6 +220,14 @@ class SolensoCoordinator(DataUpdateCoordinator[dict[int, StationData]]):
         station = StationData(
             real=await self.api.get_station_real_data(sid), daylight=is_daylight(self.hass, now)
         )
+        # Compteur d'achat/vente découvert après le démarrage : recharger pour créer ses capteurs.
+        if (
+            isinstance(station.real.get("reflux_station_data"), dict)
+            and previous is not None
+            and not isinstance(previous.real.get("reflux_station_data"), dict)
+        ):
+            _LOGGER.info("Compteur d'achat/vente disponible, rechargement de l'intégration")
+            self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
 
         try:
             station.dtus = {d["id"]: d for d in await self.api.get_dtus(sid) if "id" in d}

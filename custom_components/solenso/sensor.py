@@ -74,6 +74,23 @@ def _power(data: dict[str, Any]) -> float | None:
     return _float(data, "real_power")
 
 
+def _reflux(data: dict[str, Any]) -> dict[str, Any]:
+    """Données du compteur d'achat/vente (page « Contrôle du reflux » du cloud)."""
+    reflux = data.get("reflux_station_data")
+    return reflux if isinstance(reflux, dict) else {}
+
+
+def _reflux_power(key: str) -> Callable[[dict[str, Any]], float | None]:
+    """Puissance instantanée du compteur, nulle quand la remontée est trop ancienne."""
+
+    def value_fn(data: dict[str, Any]) -> float | None:
+        if _is_stale(data):
+            return 0.0
+        return _float(_reflux(data), key)
+
+    return value_fn
+
+
 @dataclass(frozen=True, kw_only=True)
 class SolensoSensorDescription(SensorEntityDescription):
     """Description d'un capteur de centrale."""
@@ -118,6 +135,54 @@ SENSORS: tuple[SolensoSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_last_update,
     ),
+)
+
+
+def _meter_energy(group: str, key: str, translation_key: str, precision: int) -> SolensoSensorDescription:
+    """Énergie du compteur d'achat/vente : mb_in_eq (achat) ou mb_out_eq (vente)."""
+    return SolensoSensorDescription(
+        key=translation_key,
+        translation_key=translation_key,
+        native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+        suggested_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=precision,
+        value_fn=lambda d: _float(_reflux(d).get(group) or {}, key),
+    )
+
+
+# Compteur d'achat/vente installé sur la centrale (contrôle du reflux) :
+# consommation de la maison, puissance réseau et énergies achetées / vendues.
+REFLUX_SENSORS: tuple[SolensoSensorDescription, ...] = (
+    SolensoSensorDescription(
+        key="load_power",
+        translation_key="load_power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=_reflux_power("load_power"),
+        live=True,
+    ),
+    SolensoSensorDescription(
+        key="grid_power",
+        translation_key="grid_power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=_reflux_power("grid_power"),
+        live=True,
+    ),
+    _meter_energy("mb_in_eq", "today_eq", "grid_import_today", 2),
+    _meter_energy("mb_in_eq", "month_eq", "grid_import_month", 1),
+    _meter_energy("mb_in_eq", "year_eq", "grid_import_year", 0),
+    _meter_energy("mb_in_eq", "total_eq", "grid_import_total", 0),
+    _meter_energy("mb_out_eq", "today_eq", "grid_export_today", 2),
+    _meter_energy("mb_out_eq", "month_eq", "grid_export_month", 1),
+    _meter_energy("mb_out_eq", "year_eq", "grid_export_year", 0),
+    _meter_energy("mb_out_eq", "total_eq", "grid_export_total", 0),
 )
 
 # --- Compteur pour le tableau Énergie ----------------------------------------
@@ -384,6 +449,10 @@ async def async_setup_entry(
         sid = station["id"]
         entities.extend(SolensoSensor(coordinator, station, d) for d in SENSORS)
         entities.append(SolensoProductionCounter(coordinator, station))
+        # Capteurs du compteur d'achat/vente, seulement s'il est installé sur la centrale.
+        station_data = coordinator.data.get(sid)
+        if station_data is not None and isinstance(station_data.real.get("reflux_station_data"), dict):
+            entities.extend(SolensoSensor(coordinator, station, d) for d in REFLUX_SENSORS)
         for micro in coordinator.micros.get(sid, []):
             entities.extend(MicroSensor(coordinator, sid, micro, d) for d in MICRO_SENSORS)
             ports = _ports(micro)

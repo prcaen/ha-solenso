@@ -56,6 +56,36 @@
       "last_update": {
         "name": "Dernière remontée"
       },
+      "load_power": {
+        "name": "Puissance consommée"
+      },
+      "grid_power": {
+        "name": "Puissance réseau"
+      },
+      "grid_import_today": {
+        "name": "Achat réseau du jour"
+      },
+      "grid_import_month": {
+        "name": "Achat réseau du mois"
+      },
+      "grid_import_year": {
+        "name": "Achat réseau de l'année"
+      },
+      "grid_import_total": {
+        "name": "Achat réseau total"
+      },
+      "grid_export_today": {
+        "name": "Vente réseau du jour"
+      },
+      "grid_export_month": {
+        "name": "Vente réseau du mois"
+      },
+      "grid_export_year": {
+        "name": "Vente réseau de l'année"
+      },
+      "grid_export_total": {
+        "name": "Vente réseau totale"
+      },
       "temperature": {
         "name": "Température"
       },

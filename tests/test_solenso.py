@@ -49,6 +49,24 @@ def real_data(minutes_ago: int = 2) -> dict:
     }
 
 
+def real_data_with_meter(minutes_ago: int = 2) -> dict:
+    """Réponse du cloud avec le compteur d'achat/vente (contrôle du reflux)."""
+    out = real_data(minutes_ago)
+    out["data"]["is_reflux"] = 1
+    out["data"]["reflux_station_data"] = {
+        "pv_power": "451.7",
+        "load_power": "380.5",
+        "grid_power": "-71.2",
+        "meter_location": 2,
+        "self_eq": "8000.0",
+        "meter_b_in_eq": "6200000",
+        "meter_b_out_eq": "8400000",
+        "mb_in_eq": {"today_eq": "2100.0", "month_eq": "45000", "year_eq": "220000", "total_eq": "6200000"},
+        "mb_out_eq": {"today_eq": "12500.0", "month_eq": "200000", "year_eq": "900000", "total_eq": "8400000"},
+    }
+    return out
+
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     yield
@@ -160,6 +178,35 @@ async def test_sensors(hass: HomeAssistant, aioclient_mock):
     # Le token est bien transmis à l'appel de données.
     headers = next(c[3] for c in aioclient_mock.mock_calls if str(c[1]) == REAL)
     assert headers["token"] == "tok123" and "solenso_token=tok123" in headers["Cookie"]
+    # Sans compteur d'achat/vente : pas de capteurs de consommation.
+    assert "sensor.maison_consumed_power" not in states
+    assert "sensor.maison_grid_import_today" not in states
+
+
+async def test_consumption_sensors_with_meter(hass: HomeAssistant, aioclient_mock):
+    """Le compteur d'achat/vente expose la consommation de la maison et le réseau."""
+    aioclient_mock.post(LOGIN, json=OK_LOGIN)
+    aioclient_mock.post(REAL, json=real_data_with_meter())
+    mock_no_devices(aioclient_mock)
+    entry = _entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+
+    load = hass.states.get("sensor.maison_consumed_power")
+    assert load is not None
+    assert float(load.state) == 380.5 and load.attributes["unit_of_measurement"] == "W"
+    assert float(hass.states.get("sensor.maison_grid_power").state) == -71.2
+
+    imported = hass.states.get("sensor.maison_grid_import_today")
+    assert imported.attributes["unit_of_measurement"] == "kWh"
+    assert imported.attributes["state_class"] == "total_increasing"
+    assert round(float(imported.state), 3) == 2.1
+    assert round(float(hass.states.get("sensor.maison_total_grid_import").state), 1) == 6200.0
+    exported = hass.states.get("sensor.maison_grid_export_today")
+    assert round(float(exported.state), 2) == 12.5
+    assert round(float(hass.states.get("sensor.maison_total_grid_export").state), 1) == 8400.0
 
 
 async def test_power_zero_when_data_stale(hass: HomeAssistant, aioclient_mock):
