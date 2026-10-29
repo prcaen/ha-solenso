@@ -126,6 +126,13 @@ function fmt(hass, entityId, fallbackDigits = 1) {
   };
 }
 
+function fmtPower(w, lang) {
+  if (w == null || !isFinite(w)) return { value: "—", unit: "" };
+  const locale = lang || "en";
+  if (Math.abs(w) >= 1000) return { value: (w / 1000).toLocaleString(locale, { maximumFractionDigits: 2 }), unit: "kW" };
+  return { value: Math.round(w).toLocaleString(locale), unit: "W" };
+}
+
 function relTime(hass, iso) {
   const d = new Date(iso);
   if (isNaN(d)) return "";
@@ -373,7 +380,7 @@ class SolensoCard extends HTMLElement {
     const els = this._els;
 
     els.title.textContent = cfg.name || station.name;
-    const p = fmt(hass, station.entities.power, 0);
+    const p = fmtPower(num(hass, station.entities.power), hass.locale?.language);
     els.v.textContent = p.value;
     els.u.textContent = p.unit;
 
@@ -400,11 +407,11 @@ class SolensoCard extends HTMLElement {
         els.cells[i]?.setAttribute("fill", cellColor(ratio));
         const txt = els.texts[i];
         if (txt) {
-          txt.textContent = w == null ? "" : `${Math.round(w)} W`;
+          txt.textContent = w == null ? "" : (fp => `${fp.value} ${fp.unit}`)(fmtPower(w, hass.locale?.language));
           txt.setAttribute("fill", ratio > 0.55 ? "#0c1424" : "rgba(255,255,255,.92)");
         }
         const title = els.cells[i]?.querySelector("title");
-        if (title) title.textContent = `${panelLabel(tr, station, panels, i)}: ${w == null ? "—" : Math.round(w) + " W"}`;
+        if (title) title.textContent = `${panelLabel(tr, station, panels, i)}: ${w == null ? "—" : (fp => `${fp.value} ${fp.unit}`)(fmtPower(w, hass.locale?.language))}`;
       });
     } else {
       const peak = (cfg.peak_power || 350) * Math.max(
